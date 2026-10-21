@@ -469,5 +469,156 @@ export const UI = {
       el.classList.add('opacity-0', 'translate-y-2');
       setTimeout(() => el.remove(), 250);
     }, 2000);
+  },
+
+  _callbackCerrarAlerta: null,
+
+  /**
+   * Indica si la ventana emergente de alerta está visible
+   */
+  isModalAlertaAbierto() {
+    const modal = document.getElementById('modalAlertaPago');
+    return modal && !modal.classList.contains('hidden');
+  },
+
+  /**
+   * Cierra la ventana emergente de alerta y ejecuta el callback de retorno
+   */
+  cerrarModalAlerta() {
+    const modal = document.getElementById('modalAlertaPago');
+    if (modal) {
+      modal.classList.add('hidden');
+    }
+    if (typeof this._callbackCerrarAlerta === 'function') {
+      const cb = this._callbackCerrarAlerta;
+      this._callbackCerrarAlerta = null;
+      cb();
+    }
+  },
+
+  /**
+   * Muestra la ventana emergente de alerta exclusivamente para DUPLICADO o NO ENCONTRADO
+   */
+  mostrarModalAlerta(tipo, data, onCerrar) {
+    const modal = document.getElementById('modalAlertaPago');
+    const contenedor = document.getElementById('modalAlertaContenido');
+    if (!modal || !contenedor) return;
+
+    this._callbackCerrarAlerta = onCerrar;
+
+    if (tipo === 'DUPLICADO') {
+      contenedor.innerHTML = `
+        <div class="flex items-start gap-4 mb-5">
+          <div class="w-14 h-14 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black text-2xl shadow-lg shadow-amber-500/25 flex-shrink-0 animate-pulse">
+            ⚠️
+          </div>
+          <div class="flex-1">
+            <span class="inline-block px-3 py-1 rounded-full text-[11px] font-black bg-amber-100 text-amber-900 uppercase tracking-wider mb-1.5 border border-amber-200">
+              Alerta de Seguridad • Comprobante Duplicado
+            </span>
+            <h3 class="text-xl lg:text-2xl font-black text-slate-900 tracking-tight leading-snug">
+              ⚠️ Pago Ya Registrado Previamente
+            </h3>
+          </div>
+        </div>
+
+        <p class="text-xs text-slate-600 mb-4 leading-relaxed font-medium">
+          Esta referencia <strong class="text-slate-900 font-bold">ya fue verificada y utilizada anteriormente</strong> en este sistema. Para prevenir pérdidas o duplicidades, no entregues la mercancía sin antes consultar con administración.
+        </p>
+
+        <!-- Detalle de la transacción original -->
+        <div class="bg-amber-50/90 rounded-2xl p-4 border border-amber-200 mb-5 space-y-2.5 text-xs">
+          <div class="flex items-center justify-between pb-2 border-b border-amber-200/60">
+            <span class="font-bold text-amber-900 uppercase text-[10px]">Referencia Oficial:</span>
+            <span class="font-mono font-black text-amber-950 text-sm tracking-wider">${data.referencia || data.referenciaOficial || '-'}</span>
+          </div>
+          <div class="flex items-center justify-between pb-2 border-b border-amber-200/60">
+            <span class="font-bold text-amber-900 uppercase text-[10px]">Monto del Pago:</span>
+            <span class="font-black text-amber-950 text-base">${Formatters.formatoBs(data.monto)}</span>
+          </div>
+          <div class="flex items-center justify-between pb-2 border-b border-amber-200/60">
+            <span class="font-bold text-amber-900 uppercase text-[10px]">Fecha / Hora Primer Registro:</span>
+            <span class="font-bold text-slate-800">${data.fechaHoraUsoOriginal || 'Previamente registrado'}</span>
+          </div>
+          ${data.pagoExistente?.cajera ? `
+          <div class="flex items-center justify-between pt-0.5">
+            <span class="font-bold text-amber-900 uppercase text-[10px]">Registrado por:</span>
+            <span class="font-bold text-slate-800">${data.pagoExistente.cajera} (${data.pagoExistente.turno || 'Turno'})</span>
+          </div>` : ''}
+        </div>
+
+        <div class="pt-2">
+          <button
+            id="btnCerrarAlertaPago"
+            type="button"
+            class="w-full py-3.5 px-6 bg-amber-500 hover:bg-amber-600 active:scale-[0.98] text-white font-extrabold text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-amber-500/25 transition-all text-center cursor-pointer flex items-center justify-center gap-2"
+          >
+            <span>Entendido / Continuar</span>
+            <span class="text-[10px] opacity-75 font-normal">(Presiona Enter o Esc)</span>
+          </button>
+        </div>
+      `;
+    } else {
+      // NO ENCONTRADO
+      contenedor.innerHTML = `
+        <div class="flex items-start gap-4 mb-5">
+          <div class="w-14 h-14 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-black text-2xl shadow-lg shadow-rose-600/25 flex-shrink-0">
+            ✕
+          </div>
+          <div class="flex-1">
+            <span class="inline-block px-3 py-1 rounded-full text-[11px] font-black bg-rose-100 text-rose-900 uppercase tracking-wider mb-1.5 border border-rose-200">
+              Validación Bancaria • No Liquidado
+            </span>
+            <h3 class="text-xl lg:text-2xl font-black text-slate-900 tracking-tight leading-snug">
+              ❌ Pago Móvil No Encontrado
+            </h3>
+          </div>
+        </div>
+
+        <p class="text-xs text-slate-600 mb-4 leading-relaxed font-medium">
+          El Banco Mercantil <strong class="text-slate-900 font-bold">no encontró ninguna transacción</strong> que coincida con estos datos en la fecha y monto indicados.
+        </p>
+
+        <!-- Detalle de los datos consultados -->
+        <div class="bg-rose-50/90 rounded-2xl p-4 border border-rose-200 mb-4 space-y-2.5 text-xs">
+          <div class="flex items-center justify-between pb-2 border-b border-rose-200/60">
+            <span class="font-bold text-rose-900 uppercase text-[10px]">Referencia Consultada:</span>
+            <span class="font-mono font-black text-rose-950 text-sm tracking-wider">${data.referencia || data.referenciaIngresada || '-'}</span>
+          </div>
+          <div class="flex items-center justify-between pb-2 border-b border-rose-200/60">
+            <span class="font-bold text-rose-900 uppercase text-[10px]">Monto Consultado:</span>
+            <span class="font-black text-rose-950 text-base">${Formatters.formatoBs(data.monto)}</span>
+          </div>
+          <div class="flex items-center justify-between pt-0.5">
+            <span class="font-bold text-rose-900 uppercase text-[10px]">Causa Habitual:</span>
+            <span class="font-medium text-rose-900">Número de referencia incorrecto, fecha distinta o fondos no debitados</span>
+          </div>
+        </div>
+
+        <div class="bg-slate-50 p-3 rounded-2xl border border-slate-200 text-[11px] text-slate-600 mb-5 flex items-start gap-2">
+          <span class="text-base flex-shrink-0">💡</span>
+          <span>Solicita al cliente que te muestre en su aplicación bancaria el comprobante digital emitido para verificar los últimos dígitos y el banco de destino.</span>
+        </div>
+
+        <div class="pt-2">
+          <button
+            id="btnCerrarAlertaPago"
+            type="button"
+            class="w-full py-3.5 px-6 bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white font-extrabold text-xs uppercase tracking-wider rounded-2xl shadow-lg transition-all text-center cursor-pointer flex items-center justify-center gap-2"
+          >
+            <span>Cerrar y Revisar Datos</span>
+            <span class="text-[10px] opacity-75 font-normal">(Presiona Enter o Esc)</span>
+          </button>
+        </div>
+      `;
+    }
+
+    modal.classList.remove('hidden');
+
+    const btnCerrar = document.getElementById('btnCerrarAlertaPago');
+    if (btnCerrar) {
+      btnCerrar.addEventListener('click', () => this.cerrarModalAlerta());
+      setTimeout(() => btnCerrar.focus(), 50);
+    }
   }
 };

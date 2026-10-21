@@ -48,6 +48,9 @@ const resumenCierreApertura = document.getElementById('resumenCierreApertura');
 const resumenCierreCantidad = document.getElementById('resumenCierreCantidad');
 const resumenCierreTotalBs = document.getElementById('resumenCierreTotalBs');
 
+// Modal Alerta Flotante (Duplicado / No Encontrado)
+const modalAlertaPago = document.getElementById('modalAlertaPago');
+
 /**
  * Foco automático en el campo de referencia
  */
@@ -203,11 +206,17 @@ async function ejecutarVerificacion() {
 
     } else if (res.status === 409 || res.data.estado === 'DUPLICADO') {
       UI.mostrarDuplicado(cardResultado, resultadoContenido, res.data);
-      refInput.select();
+      UI.mostrarModalAlerta('DUPLICADO', res.data, () => {
+        refInput.focus();
+        refInput.select();
+      });
 
     } else if (res.status === 404 || res.data.estado === 'NO_ENCONTRADO') {
       UI.mostrarNoEncontrado(cardResultado, resultadoContenido, res.data);
-      refInput.select();
+      UI.mostrarModalAlerta('NO_ENCONTRADO', res.data, () => {
+        refInput.focus();
+        refInput.select();
+      });
 
     } else if (res.data.estado === 'CAJA_CERRADA') {
       UI.toast(res.data.mensaje);
@@ -255,13 +264,22 @@ function configurarEventos() {
   // Escape cierra modales o reenfoca referencia
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      if (!modalAbrirCaja.classList.contains('hidden')) {
+      if (UI.isModalAlertaAbierto()) {
+        UI.cerrarModalAlerta();
+      } else if (!modalAbrirCaja.classList.contains('hidden')) {
         cerrarModalApertura();
       } else if (!modalCerrarCaja.classList.contains('hidden')) {
         cerrarModalCierre();
       } else {
         enfocarReferencia();
       }
+    }
+  });
+
+  // Clic en el fondo del modal de alerta para cerrarlo
+  modalAlertaPago?.addEventListener('click', (e) => {
+    if (e.target === modalAlertaPago) {
+      UI.cerrarModalAlerta();
     }
   });
 
