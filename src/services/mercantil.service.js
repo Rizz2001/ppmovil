@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import https from 'node:https';
 import { fileURLToPath } from 'node:url';
-import { cifrarMercantil } from '../utils/crypto.util.js';
+import { cifrarMercantil, descifrarMercantil } from '../utils/crypto.util.js';
 import { normalizarTelefono, normalizarFecha, normalizarMonto, normalizarReferencia } from '../utils/validator.util.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -123,21 +123,35 @@ export async function verificarPago({ referencia, monto, fechaPago, telefonoClie
   const telefonoDestino = normalizarTelefono(cfg.TELEFONO_EMPRESA);
   const telefonoDestinoCifrado = cifrarMercantil(telefonoDestino, cfg.SECRET_KEY);
 
+  // En Sandbox de Mercantil, las transacciones precargadas usan la fecha 2026-10-19 y origen 584142591177
+  const defaultOrigen = modo === 'sandbox' ? '584142591177' : '584140000000';
+  const defaultFecha = modo === 'sandbox' ? '2026-10-19' : normalizarFecha(fechaPago);
+
+  const telOrigenRaw = telefonoCliente ? normalizarTelefono(telefonoCliente) : defaultOrigen;
+  const telefonoOrigenCifrado = cifrarMercantil(telOrigenRaw, cfg.SECRET_KEY);
+  const fechaTrxFinal = fechaPago ? normalizarFecha(fechaPago) : defaultFecha;
+
   const payload = {
     merchant_identify: {
-      integrator_id: 1,
-      merchant_id: cfg.MERCHANT_ID,
-      terminal_id: '1'
+      integratorId: 31,
+      merchantId: Number(cfg.MERCHANT_ID),
+      terminalId: '1'
     },
     client_identify: {
-      ipaddress: '127.0.0.1'
+      ipaddress: '127.0.0.1',
+      browser_agent: 'Chrome 18.1.3',
+      mobile: {
+        manufacturer: 'Samsung'
+      }
     },
     search_by: {
       amount: montoNum,
       currency: 'ves',
+      destinantion_mobile_number: telefonoDestinoCifrado,
       destination_mobile_number: telefonoDestinoCifrado,
+      origin_mobile_number: telefonoOrigenCifrado,
       payment_reference: refLimpia,
-      trx_date: fechaTrx
+      trx_date: fechaTrxFinal
     }
   };
 
@@ -163,9 +177,23 @@ export async function verificarPago({ referencia, monto, fechaPago, telefonoClie
       res.on('end', () => {
         try {
           const jsonRes = JSON.parse(responseBody);
+          console.log('[mercantil.service] Respuesta Mercantil:', JSON.stringify(jsonRes));
+
+          // 1. Transacción encontrada con éxito
           if (jsonRes.transaction_list && jsonRes.transaction_list.length > 0) {
             const trx = jsonRes.transaction_list[0];
             const refOficial = trx.payment_reference || refLimpia;
+
+            // Extraer y descifrar el teléfono del cliente si viene en la respuesta de Mercantil
+            let telClienteFinal = telefonoCliente ? normalizarTelefono(telefonoCliente) : 'No especificado';
+            if (trx.origin_mobile_number) {
+              try {
+                telClienteFinal = descifrarMercantil(trx.origin_mobile_number, cfg.SECRET_KEY);
+              } catch (e) {
+                console.warn('[mercantil.service] Error descifrando origin_mobile_number:', e.message);
+              }
+            }
+
             resolve({
               ok: true,
               status: 200,
@@ -173,8 +201,47 @@ export async function verificarPago({ referencia, monto, fechaPago, telefonoClie
                 referenciaOficial: refOficial,
                 referenciaIngresada: refLimpia,
                 monto: trx.amount || montoNum,
-                fechaPago: fechaTrx,
-                telefonoCliente: telefonoCliente || 'Cliente Mercantil'
+                fechaPago: fechaTrxFinal,
+                telefonoCliente: telClienteFinal
+              }
+            });
+          // 2. Errores estructurados del banco (ej. error_code 0330 = no encontrado)
+          } else if (jsonRes.error_list && jsonRes.error_list.length > 0) {
+            const errItem = jsonRes.error_list[0];
+            const errCode = String(errItem.error_code || errItem.code || '');
+            const msg = errItem.description || errItem.message || 'Error reportado por Banco Mercantil';
+
+            // Código 0330 / 330: "No hay transacciones que coincidan con los campos de busqueda"
+            if (errCode === '0330' || errCode === '330') {
+              resolve({
+                ok: false,
+                status: 404,
+                data: {
+                  estado: 'NO_ENCONTRADO',
+                  mensaje: '❌ Pago móvil no encontrado en Banco Mercantil',
+                  referencia: refLimpia
+                }
+              });
+            } else {
+              resolve({
+                ok: false,
+                status: 400,
+                data: {
+                  estado: 'ERROR',
+                  mensaje: `Banco Mercantil (${errCode || 'API'}): ${msg}`,
+                  referencia: refLimpia
+                }
+              });
+            }
+          // 3. Fallo genérico 99999 de Mercantil
+          } else if (jsonRes.code === 99999 || jsonRes.code === '99999') {
+            resolve({
+              ok: false,
+              status: 500,
+              data: {
+                estado: 'ERROR',
+                mensaje: 'Error de procesamiento en la plataforma de Banco Mercantil (código 99999)',
+                referencia: refLimpia
               }
             });
           } else {
@@ -189,10 +256,11 @@ export async function verificarPago({ referencia, monto, fechaPago, telefonoClie
             });
           }
         } catch (e) {
+          console.error('[mercantil.service] Error parseando respuesta:', responseBody);
           resolve({
             ok: false,
             status: 502,
-            data: { estado: 'ERROR', mensaje: 'Respuesta inválida de Banco Mercantil' }
+            data: { estado: 'ERROR', mensaje: 'Respuesta inválida de Banco Mercantil: ' + (responseBody.slice(0, 100) || e.message) }
           });
         }
       });

@@ -1,6 +1,7 @@
 # Credenciales y archivos sensibles
 config/config.json
 data/pagos_verificados.json
+data/caja_sesiones.json
 config.json
 pagos_verificados.json
 .env

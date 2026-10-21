@@ -227,7 +227,7 @@ export const UI = {
     if (!pagos || pagos.length === 0) {
       tbodyEl.innerHTML = `
         <tr>
-          <td colspan="6" class="text-center py-10 text-slate-400">
+          <td colspan="7" class="text-center py-10 text-slate-400">
             <div class="flex flex-col items-center justify-center gap-1.5">
               <span class="text-2xl opacity-60">📋</span>
               <span class="font-semibold text-slate-600 text-xs">Sin transacciones registradas</span>
@@ -249,6 +249,9 @@ export const UI = {
         </td>
         <td class="py-3.5 font-mono text-slate-400">
           ${p.referenciaIngresada || '-'}
+        </td>
+        <td class="py-3.5 font-mono font-semibold text-slate-700 whitespace-nowrap">
+          ${p.telefonoCliente && p.telefonoCliente !== 'No especificado' ? p.telefonoCliente : '-'}
         </td>
         <td class="py-3.5 text-right font-extrabold text-slate-800 whitespace-nowrap">
           ${Formatters.formatoBs(p.monto)}
@@ -287,7 +290,7 @@ export const UI = {
   },
 
   /**
-   * Exporta la lista de pagos en formato CSV
+   * Exporta la lista completa de pagos en formato CSV
    */
   exportarCSV(pagos) {
     if (!pagos || pagos.length === 0) {
@@ -296,16 +299,18 @@ export const UI = {
     }
 
     let csv = '\uFEFF';
-    csv += 'Fecha y Hora;Referencia Oficial (12 digitos);Referencia Ingresada;Monto (Bs.);Estado;Telefono Cliente\r\n';
+    csv += 'Fecha y Hora;Referencia Oficial (12 digitos);Referencia Ingresada;Telefono Pagador;Monto (Bs.);Estado;Cajera;Turno\r\n';
 
     pagos.forEach(p => {
       const fila = [
         `"${p.fechaHoraRegistro || p.fechaPago || ''}"`,
         `"${p.referenciaOficial || ''}"`,
         `"${p.referenciaIngresada || ''}"`,
+        `"${p.telefonoCliente || ''}"`,
         `"${(p.monto || 0).toString().replace('.', ',')}"`,
         `"APROBADO"`,
-        `"${p.telefonoCliente || ''}"`
+        `"${p.cajera || 'General'}"`,
+        `"${p.turno || 'General'}"`
       ];
       csv += fila.join(';') + '\r\n';
     });
@@ -315,11 +320,138 @@ export const UI = {
     const a = document.createElement('a');
     const hoy = new Date().toISOString().slice(0, 10);
     a.href = url;
-    a.download = `Mercantil_P2C_${hoy}.csv`;
+    a.download = `Mercantil_P2C_Historial_Completo_${hoy}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  },
+
+  /**
+   * Genera y descarga el reporte oficial de cierre de caja con los datos de la cajera y turno
+   */
+  exportarCierreCaja(sesion) {
+    if (!sesion) return;
+    const cajera = (sesion.cajera || 'Cajera').trim();
+    const turno = (sesion.turno || 'General').trim();
+    const pagos = sesion.pagos || [];
+
+    let csv = '\uFEFF';
+    csv += '=========================================================================\r\n';
+    csv += 'REPORTE OFICIAL DE CIERRE DE CAJA - PAGOS MOVILES BANCO MERCANTIL\r\n';
+    csv += 'Catador Empresas\r\n';
+    csv += '=========================================================================\r\n';
+    csv += `Cajera(o) Asignada:;${cajera}\r\n`;
+    csv += `Turno:;${turno}\r\n`;
+    csv += `Fecha y Hora de Apertura:;${sesion.fechaApertura || ''}\r\n`;
+    csv += `Fecha y Hora de Cierre:;${sesion.fechaCierre || ''}\r\n`;
+    csv += `Total Pagos Aprobados:;${sesion.cantidadPagos || pagos.length}\r\n`;
+    csv += `Monto Total Recaudado (Bs.):;${Formatters.formatoBs(sesion.totalBs || 0)}\r\n`;
+    csv += '=========================================================================\r\n\r\n';
+    csv += 'DETALLE DE TRANSACCIONES APROBADAS EN ESTE TURNO:\r\n';
+    csv += 'Fecha y Hora;Referencia Oficial (12 digitos);Ref. Ingresada;Telefono Pagador;Monto (Bs.);Estado\r\n';
+
+    pagos.forEach(p => {
+      const fila = [
+        `"${p.fechaHoraRegistro || p.fechaPago || ''}"`,
+        `"${p.referenciaOficial || ''}"`,
+        `"${p.referenciaIngresada || ''}"`,
+        `"${p.telefonoCliente || ''}"`,
+        `"${(p.monto || 0).toString().replace('.', ',')}"`,
+        `"APROBADO"`
+      ];
+      csv += fila.join(';') + '\r\n';
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const cajeraLimpia = cajera.replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ]/g, '_');
+    const turnoLimpio = turno.replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ]/g, '_');
+    const hoy = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `Cierre_Caja_${cajeraLimpia}_Turno_${turnoLimpio}_${hoy}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  },
+
+  /**
+   * Actualiza los elementos visuales del estado de caja en la interfaz
+   */
+  renderEstadoCaja(estado) {
+    const indicatorDot = document.getElementById('cajaIndicatorDot');
+    const statusText = document.getElementById('cajaStatusText');
+    const detalleText = document.getElementById('cajaDetalleText');
+    const textoToggle = document.getElementById('textoToggleCaja');
+    const btnToggle = document.getElementById('btnToggleCaja');
+    const iconToggle = document.getElementById('iconToggleCaja');
+    const cajeraLabel = document.getElementById('metricCajeraLabel');
+    const metricTotal = document.getElementById('metricTotalBs');
+    const metricCantidad = document.getElementById('metricCantidadPagos');
+    const btnCerrarBanner = document.getElementById('btnCerrarCajaBanner');
+    const btnCerrarBannerTexto = document.getElementById('btnCerrarCajaTexto');
+    const iconCerrarBanner = document.getElementById('iconCerrarCajaBanner');
+
+    if (estado && estado.abierta && estado.sesion) {
+      const { sesion, totalBs, cantidadPagos } = estado;
+      
+      // Header widget
+      if (indicatorDot) indicatorDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse';
+      if (statusText) statusText.textContent = 'Caja Abierta';
+      if (detalleText) detalleText.textContent = `${sesion.cajera} • ${sesion.turno}`;
+
+      // Botón Header
+      if (textoToggle) textoToggle.textContent = 'Cerrar Turno';
+      if (btnToggle) {
+        btnToggle.className = 'px-4 py-2.5 rounded-2xl font-bold text-xs shadow-md transition-all flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white active:scale-95 cursor-pointer';
+      }
+      if (iconToggle) {
+        iconToggle.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>';
+      }
+
+      // Banner derecho
+      if (cajeraLabel) cajeraLabel.textContent = `Cajera: ${sesion.cajera} (${sesion.turno})`;
+      if (metricTotal) metricTotal.textContent = Formatters.formatoBs(totalBs);
+      if (metricCantidad) metricCantidad.textContent = `${cantidadPagos} Pagos`;
+
+      if (btnCerrarBannerTexto) btnCerrarBannerTexto.textContent = 'Cerrar Caja y Exportar';
+      if (btnCerrarBanner) {
+        btnCerrarBanner.className = 'w-full py-3.5 px-5 bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white font-bold text-xs uppercase tracking-wider rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2 group cursor-pointer';
+      }
+      if (iconCerrarBanner) {
+        iconCerrarBanner.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>';
+      }
+
+    } else {
+      // Caja cerrada
+      if (indicatorDot) indicatorDot.className = 'w-2.5 h-2.5 rounded-full bg-slate-400';
+      if (statusText) statusText.textContent = 'Caja Cerrada';
+      if (detalleText) detalleText.textContent = 'Sin turno activo';
+
+      // Botón Header
+      if (textoToggle) textoToggle.textContent = 'Abrir Caja';
+      if (btnToggle) {
+        btnToggle.className = 'px-4 py-2.5 rounded-2xl font-bold text-xs shadow-md transition-all flex items-center gap-2 bg-gradient-to-r from-blue-700 to-blue-600 hover:from-blue-800 hover:to-blue-700 text-white active:scale-95 cursor-pointer';
+      }
+      if (iconToggle) {
+        iconToggle.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path>';
+      }
+
+      // Banner derecho
+      if (cajeraLabel) cajeraLabel.textContent = 'Caja Cerrada';
+      if (metricTotal) metricTotal.textContent = 'Bs. 0,00';
+      if (metricCantidad) metricCantidad.textContent = '0 Pagos';
+
+      if (btnCerrarBannerTexto) btnCerrarBannerTexto.textContent = 'Abrir Caja (Iniciar Turno)';
+      if (btnCerrarBanner) {
+        btnCerrarBanner.className = 'w-full py-3.5 px-5 bg-white text-blue-700 hover:bg-blue-50 active:scale-[0.98] font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2 group cursor-pointer';
+      }
+      if (iconCerrarBanner) {
+        iconCerrarBanner.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path>';
+      }
+    }
   },
 
   /**

@@ -1,6 +1,14 @@
 import crypto from 'node:crypto';
 import { verificarPago, obtenerConfigPublica } from '../services/mercantil.service.js';
-import { obtenerPagos, buscarDuplicado, guardarPago } from '../services/storage.service.js';
+import {
+  obtenerPagos,
+  buscarDuplicado,
+  guardarPago,
+  obtenerEstadoCaja,
+  obtenerSesionActiva,
+  abrirCaja,
+  cerrarCaja
+} from '../services/storage.service.js';
 
 /**
  * Envia una respuesta JSON estandarizada con encabezados CORS.
@@ -70,9 +78,47 @@ export async function handleApiRoutes(req, res, url) {
     return sendJson(res, 200, pagos);
   }
 
-  // 3. POST /api/verificar
+  // 3. GET /api/caja/estado
+  if (req.method === 'GET' && pathname === '/api/caja/estado') {
+    return sendJson(res, 200, obtenerEstadoCaja());
+  }
+
+  // 4. POST /api/caja/abrir
+  if (req.method === 'POST' && pathname === '/api/caja/abrir') {
+    try {
+      const data = await parseBody(req);
+      const { cajera, turno } = data;
+      if (!cajera || !cajera.trim()) {
+        return sendJson(res, 400, { ok: false, mensaje: 'El nombre de la cajera es obligatorio para abrir caja.' });
+      }
+      const resultado = abrirCaja({ cajera, turno });
+      return sendJson(res, resultado.ok ? 200 : 400, resultado);
+    } catch (err) {
+      return sendJson(res, 500, { ok: false, mensaje: 'Error al abrir caja: ' + err.message });
+    }
+  }
+
+  // 5. POST /api/caja/cerrar
+  if (req.method === 'POST' && pathname === '/api/caja/cerrar') {
+    try {
+      const resultado = cerrarCaja();
+      return sendJson(res, resultado.ok ? 200 : 400, resultado);
+    } catch (err) {
+      return sendJson(res, 500, { ok: false, mensaje: 'Error al cerrar caja: ' + err.message });
+    }
+  }
+
+  // 6. POST /api/verificar
   if (req.method === 'POST' && pathname === '/api/verificar') {
     try {
+      const sesionActiva = obtenerSesionActiva();
+      if (!sesionActiva) {
+        return sendJson(res, 400, {
+          estado: 'CAJA_CERRADA',
+          mensaje: '⚠️ La caja está cerrada. Por favor abre caja con tu nombre y turno para comenzar a verificar pagos.'
+        });
+      }
+
       const data = await parseBody(req);
       const { referencia, monto, fechaPago, telefonoCliente } = data;
 
@@ -114,6 +160,9 @@ export async function handleApiRoutes(req, res, url) {
 
       const nuevoPago = {
         id: crypto.randomUUID ? crypto.randomUUID() : `pago_${Date.now()}`,
+        sesionId: sesionActiva.id,
+        cajera: sesionActiva.cajera,
+        turno: sesionActiva.turno,
         referenciaOficial: infoTrx.referenciaOficial,
         referenciaIngresada: infoTrx.referenciaIngresada,
         monto: infoTrx.monto,
@@ -132,7 +181,10 @@ export async function handleApiRoutes(req, res, url) {
         referenciaIngresada: infoTrx.referenciaIngresada,
         monto: infoTrx.monto,
         fechaPago: infoTrx.fechaPago,
+        telefonoCliente: infoTrx.telefonoCliente,
         fechaHora: fechaHoraRegistro,
+        cajera: sesionActiva.cajera,
+        turno: sesionActiva.turno,
         pago: nuevoPago
       });
 
