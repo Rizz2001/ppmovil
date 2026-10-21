@@ -1,0 +1,16 @@
+# Credenciales y archivos sensibles
+config/config.json
+data/pagos_verificados.json
+config.json
+pagos_verificados.json
+.env
+
+# Dependencias y logs
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Archivos de sistema y SO
+.DS_Store
+Thumbs.db

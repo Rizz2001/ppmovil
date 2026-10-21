@@ -1,0 +1,18 @@
+{
+  "name": "verificador-mercantil-catador",
+  "version": "1.0.0",
+  "description": "Verificador Local de Pagos Móviles P2C del Banco Mercantil para Catador Empresas",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "keywords": [
+    "p2c",
+    "banco-mercantil",
+    "pago-movil",
+    "venezuela"
+  ],
+  "author": "Catador Empresas",
+  "license": "MIT"
+}
